@@ -18,6 +18,19 @@ function formatNow() {
   }).format(new Date());
 }
 
+async function getNfcPermissionState() {
+  if (!("permissions" in navigator) || !navigator.permissions.query) {
+    return "unknown";
+  }
+
+  try {
+    const result = await navigator.permissions.query({ name: "nfc" });
+    return result.state;
+  } catch {
+    return "unknown";
+  }
+}
+
 function readDataViewAsText(dataView, encoding = "utf-8") {
   try {
     return new TextDecoder(encoding).decode(dataView);
@@ -91,12 +104,35 @@ async function startScan() {
       setStatus("读取成功，可以继续刷其他卡。", "success");
     });
   } catch (error) {
-    const message =
-      error?.name === "NotAllowedError"
-        ? "你拒绝了 NFC 权限，浏览器无法开始扫描。"
-        : error?.name === "NotSupportedError"
-          ? "当前设备不支持 NFC 或系统没有启用 NFC。"
-          : `启动扫描失败：${error?.message || String(error)}`;
+    const permissionState = await getNfcPermissionState();
+    let message = `启动扫描失败：${error?.message || String(error)}`;
+
+    if (error?.name === "NotAllowedError") {
+      const reasons = [];
+
+      if (!window.isSecureContext) {
+        reasons.push("当前页面不是安全上下文");
+      }
+
+      if (window.top !== window) {
+        reasons.push("当前页面不是顶层页面");
+      }
+
+      if (document.visibilityState !== "visible") {
+        reasons.push("当前页面不可见");
+      }
+
+      if (permissionState === "denied") {
+        reasons.push("站点的 NFC 权限当前是已拒绝");
+      }
+
+      message =
+        reasons.length > 0
+          ? `浏览器拒绝启动 NFC 扫描：${reasons.join("；")}。请在 Android Chrome 中直接打开 HTTPS 页面，并到站点权限里把 NFC 改成允许或重置权限后重试。`
+          : "浏览器拒绝启动 NFC 扫描。请确认你是在 Android Chrome 中直接打开 HTTPS 页面，手机已开启 NFC，并在站点权限里允许 NFC。";
+    } else if (error?.name === "NotSupportedError") {
+      message = "当前设备不支持 NFC，或系统里的 NFC 没有开启。";
+    }
 
     setStatus(message, "error");
   }
