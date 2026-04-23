@@ -1,0 +1,105 @@
+const scanButton = document.getElementById("scanButton");
+const statusEl = document.getElementById("status");
+const serialNumberEl = document.getElementById("serialNumber");
+const recordCountEl = document.getElementById("recordCount");
+const scanTimeEl = document.getElementById("scanTime");
+const recordsEl = document.getElementById("records");
+
+function setStatus(message, type = "info") {
+  statusEl.textContent = message;
+  statusEl.dataset.type = type;
+}
+
+function formatNow() {
+  return new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date());
+}
+
+function readDataViewAsText(dataView, encoding = "utf-8") {
+  try {
+    return new TextDecoder(encoding).decode(dataView);
+  } catch {
+    return "[无法直接解码为文本]";
+  }
+}
+
+function parseRecord(record) {
+  const base = {
+    recordType: record.recordType,
+    mediaType: record.mediaType || "",
+    id: record.id || "",
+  };
+
+  if (!record.data) {
+    return base;
+  }
+
+  if (record.recordType === "text") {
+    return {
+      ...base,
+      text: record.data ? readDataViewAsText(record.data, record.encoding || "utf-8") : "",
+      encoding: record.encoding || "",
+      lang: record.lang || "",
+    };
+  }
+
+  if (record.recordType === "url") {
+    return {
+      ...base,
+      url: readDataViewAsText(record.data),
+    };
+  }
+
+  return {
+    ...base,
+    rawText: readDataViewAsText(record.data),
+  };
+}
+
+function updateResult({ serialNumber, message }) {
+  serialNumberEl.textContent = serialNumber || "(空字符串)";
+  recordCountEl.textContent = String(message.records.length);
+  scanTimeEl.textContent = formatNow();
+
+  const parsedRecords = message.records.map(parseRecord);
+  recordsEl.textContent = JSON.stringify(parsedRecords, null, 2);
+}
+
+async function startScan() {
+  if (!("NDEFReader" in window)) {
+    setStatus("当前浏览器不支持 Web NFC，请换成 Android Chrome。", "error");
+    return;
+  }
+
+  setStatus("正在请求 NFC 权限，请在浏览器中允许。");
+
+  try {
+    const ndef = new NDEFReader();
+    await ndef.scan();
+
+    setStatus("扫描已启动，请把 NFC 卡贴近手机背面。", "success");
+
+    ndef.addEventListener("readingerror", () => {
+      setStatus("检测到 NFC 标签，但内容无法读取。可能不是 NDEF 标签。", "error");
+    });
+
+    ndef.addEventListener("reading", (event) => {
+      updateResult(event);
+      setStatus("读取成功，可以继续刷其他卡。", "success");
+    });
+  } catch (error) {
+    const message =
+      error?.name === "NotAllowedError"
+        ? "你拒绝了 NFC 权限，浏览器无法开始扫描。"
+        : error?.name === "NotSupportedError"
+          ? "当前设备不支持 NFC 或系统没有启用 NFC。"
+          : `启动扫描失败：${error?.message || String(error)}`;
+
+    setStatus(message, "error");
+  }
+}
+
+scanButton.addEventListener("click", startScan);

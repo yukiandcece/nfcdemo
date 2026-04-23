@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>NFC UID Demo</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="card hero">
+        <p class="eyebrow">Web NFC Demo</p>
+        <h1>手机 NFC 刷卡读取</h1>
+        <p class="intro">
+          这个页面会尝试读取 NFC 标签的唯一标识
+          <code>serialNumber</code>，并展示标签里的 NDEF 内容。
+        </p>
+
+        <button id="scanButton" class="primary-btn" type="button">
+          开始扫描 NFC
+        </button>
+
+        <p id="status" class="status" aria-live="polite">
+          等待开始。请使用支持 Web NFC 的安卓手机 Chrome 浏览器。
+        </p>
+      </section>
+
+      <section class="grid">
+        <article class="card result-card">
+          <div class="label">唯一标识</div>
+          <div id="serialNumber" class="serial-number">尚未读取</div>
+          <div class="hint">如果标签未暴露 UID，这里可能会是空字符串。</div>
+        </article>
+
+        <article class="card info-card">
+          <div class="label">标签信息</div>
+          <dl class="meta-list">
+            <div>
+              <dt>记录数</dt>
+              <dd id="recordCount">-</dd>
+            </div>
+            <div>
+              <dt>扫描时间</dt>
+              <dd id="scanTime">-</dd>
+            </div>
+          </dl>
+        </article>
+      </section>
+
+      <section class="card">
+        <div class="label">NDEF Records</div>
+        <pre id="records" class="records">暂无数据</pre>
+      </section>
+
+      <section class="card notes">
+        <div class="label">使用说明</div>
+        <ul>
+          <li>必须在 HTTPS 页面或受支持的安全环境中打开。</li>
+          <li>推荐 Android Chrome 89+，iPhone Safari 不支持 Web NFC。</li>
+          <li>点击按钮后，把手机背面贴近 NFC 卡片或标签。</li>
+          <li>如果卡片不是 NDEF 标签，浏览器可能只能报错，无法读取内容。</li>
+        </ul>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

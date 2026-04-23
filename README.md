@@ -1,0 +1,73 @@
+# NFC UID Demo
+
+一个尽可能简单的前端 NFC 刷卡示例，目标是在手机浏览器里读取 NFC 标签的唯一标识 `serialNumber`，并顺手展示 NDEF 记录内容。
+
+## 适用场景
+
+- 安卓手机
+- Chrome 浏览器
+- 页面通过 HTTPS 打开
+
+不适用：
+
+- iPhone Safari
+- 纯 HTTP 页面
+- 非 NDEF 标签的完整解析
+
+## 本地文件
+
+- `index.html`：页面结构
+- `app.js`：Web NFC 读取逻辑
+- `style.css`：移动端样式
+
+## 如何运行
+
+最简单的方式是把当前目录部署到任意静态 HTTPS 托管：
+
+- GitHub Pages
+- Netlify
+- Vercel
+
+然后用安卓手机 Chrome 打开页面，点击“开始扫描 NFC”，把卡贴近手机背面即可。
+
+### 本地启动
+
+当前项目也可以直接在 Windows PowerShell 里本地启动：
+
+```powershell
+./start-local.ps1
+```
+
+停止：
+
+```powershell
+./stop-local.ps1
+```
+
+本机浏览器访问：
+
+- http://127.0.0.1:8080
+- http://localhost:8080
+
+如果同一局域网手机访问你的电脑，一般会是：
+
+- http://你的电脑局域网IP:8080
+
+但要注意，`http://局域网IP:8080` 不是安全上下文，手机浏览器通常无法使用 Web NFC。真正要在手机上测 NFC，推荐部署到 HTTPS，或者改成原生 Android。
+
+## 重要限制
+
+1. Web NFC 只在部分浏览器可用，现实中主要就是 Android Chrome。
+2. `serialNumber` 可能是空字符串，这取决于浏览器和标签是否暴露该信息。
+3. Web NFC 主要面向 NDEF 标签；某些门禁卡、IC 卡、CPU 卡未必能直接被网页读取。
+
+## 现成参考
+
+- Chrome 官方说明：https://developer.chrome.com/docs/capabilities/nfc
+- MDN `serialNumber` 文档：https://developer.mozilla.org/en-US/docs/Web/API/NDEFReadingEvent/serialNumber
+- GoogleChrome 示例仓库：https://github.com/GoogleChrome/samples
+- Web NFC 规范仓库：https://github.com/w3c/web-nfc
+
+## 建议
+
+如果你的目标是“门禁卡 UID 必须稳定可读，而且希望兼容更多机型”，那就不要继续走纯前端网页路线，改成原生 Android 或 Capacitor 插件会更稳。
