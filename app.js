@@ -1,4 +1,4 @@
-const APP_VERSION = "2026.04.27-r1";
+const APP_VERSION = "2026.04.27-r2";
 
 const scanButton = document.getElementById("scanButton");
 const stopButton = document.getElementById("stopButton");
