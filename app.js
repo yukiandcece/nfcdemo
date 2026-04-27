@@ -162,7 +162,7 @@ function parseRecord(record) {
   if (record.recordType === "text") {
     return {
       ...base,
-      text: readDataViewAsText(record.data, record.encoding || "utf-8"),
+      nfc_id: readDataViewAsText(record.data, record.encoding || "utf-8"),
       encoding: record.encoding || "",
       lang: record.lang || "",
     };
