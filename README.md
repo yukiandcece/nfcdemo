@@ -2,6 +2,8 @@
 
 一个尽可能简单的前端 NFC 刷卡示例，目标是在手机浏览器里读取 NFC 标签的唯一标识 `serialNumber`，并顺手展示 NDEF 记录内容。
 
+这个仓库也是一个可复制的 Web NFC demo：核心读写能力已经封装在 `nfc-core.js`，其它项目可以直接复制该文件接入。详细用法见 [NFC_CORE_GUIDE.md](./NFC_CORE_GUIDE.md)。
+
 ## 适用场景
 
 - 安卓手机
@@ -17,7 +19,8 @@
 ## 本地文件
 
 - `index.html`：页面结构
-- `app.js`：Web NFC 读取逻辑
+- `nfc-core.js`：可复制到其它项目的 Web NFC 读写核心模块
+- `app.js`：demo 页面交互逻辑
 - `style.css`：移动端样式
 
 ## 如何运行
@@ -28,7 +31,13 @@
 - Netlify
 - Vercel
 
-然后用安卓手机 Chrome 打开页面，点击“开始扫描 NFC”，把卡贴近手机背面即可。
+然后用安卓手机 Chrome 打开页面，点击“开始扫描 NFC”或“写入”，把卡贴近手机背面即可。
+
+当前 GitHub Pages 地址：
+
+```text
+https://yukiandcece.github.io/nfcdemo/
+```
 
 ### 本地启动
 
@@ -61,6 +70,8 @@
 2. `serialNumber` 可能是空字符串，这取决于浏览器和标签是否暴露该信息。
 3. Web NFC 主要面向 NDEF 标签；某些门禁卡、IC 卡、CPU 卡未必能直接被网页读取。
 4. 系统浏览器、应用内置浏览器经常会直接拒绝 `scan()`，即使页面本身能正常打开。
+5. 写入功能只适用于可写、未锁定且容量足够的 NDEF 标签。
+6. 本 demo 写入的是 JSON MIME 记录，格式为 `{ "nfc_id": "..." }`。旧版本写入的 text 记录需要重新写卡才会变成 JSON。
 
 ## 排查建议
 

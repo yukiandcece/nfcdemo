@@ -1,4 +1,14 @@
-const APP_VERSION = "2026.04.27-r3";
+import {
+  collectNfcDiagnostics,
+  createNfcScanner,
+  detectNfcBrowser,
+  explainNfcScanError,
+  explainNfcWriteError,
+  isWebNfcSupported,
+  writeNfcId,
+} from "./nfc-core.js";
+
+const APP_VERSION = "2026.04.27-r4";
 
 const scanButton = document.getElementById("scanButton");
 const stopButton = document.getElementById("stopButton");
@@ -24,14 +34,12 @@ const originStateEl = document.getElementById("originState");
 const diagnosticsJsonEl = document.getElementById("diagnosticsJson");
 
 const state = {
-  controller: null,
-  ndef: null,
+  scanner: null,
   scanning: false,
   writing: false,
   lastError: null,
   lastReadAt: null,
   diagnostics: null,
-  handlers: null,
 };
 
 function setStatus(message, type = "info") {
@@ -67,154 +75,6 @@ function formatPermission(stateValue) {
   return "未知";
 }
 
-function detectBrowser() {
-  const ua = navigator.userAgent || "";
-  const isAndroid = /Android/i.test(ua);
-  const isChrome = /Chrome\/\d+/i.test(ua);
-  const blockedShells = [
-    [/EdgA\//i, "Edge Android"],
-    [/SamsungBrowser\//i, "Samsung Internet"],
-    [/HuaweiBrowser\//i, "Huawei Browser"],
-    [/MiuiBrowser\//i, "MIUI Browser"],
-    [/XiaoMi\/MiuiBrowser/i, "MIUI Browser"],
-    [/MQQBrowser\//i, "QQ Browser"],
-    [/QQBrowser\//i, "QQ Browser"],
-    [/UCBrowser\//i, "UC Browser"],
-    [/OPR\//i, "Opera"],
-    [/VivoBrowser\//i, "Vivo Browser"],
-    [/HeyTapBrowser\//i, "OPPO Browser"],
-    [/MicroMessenger\//i, "WeChat WebView"],
-    [/wv\)/i, "Android WebView"],
-  ];
-
-  const shell = blockedShells.find(([pattern]) => pattern.test(ua));
-  const label = shell
-    ? shell[1]
-    : isAndroid && isChrome
-      ? "Android Chrome"
-      : isAndroid
-        ? "Android 浏览器"
-        : "非 Android 浏览器";
-
-  return {
-    label,
-    isAndroid,
-    isChrome,
-    isRecommended: isAndroid && isChrome && !shell,
-    userAgent: ua,
-  };
-}
-
-async function getNfcPermissionState() {
-  if (!("permissions" in navigator) || !navigator.permissions.query) {
-    return "unknown";
-  }
-
-  try {
-    const result = await navigator.permissions.query({ name: "nfc" });
-    return result.state;
-  } catch {
-    return "unknown";
-  }
-}
-
-function bytesToHex(dataView) {
-  if (!dataView) {
-    return "";
-  }
-
-  const bytes = new Uint8Array(
-    dataView.buffer,
-    dataView.byteOffset,
-    dataView.byteLength,
-  );
-
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(" ");
-}
-
-function readDataViewAsText(dataView, encoding = "utf-8") {
-  const candidates = [encoding, "utf-8", "utf-16le"];
-
-  for (const candidate of candidates) {
-    try {
-      return new TextDecoder(candidate).decode(dataView);
-    } catch {
-      // Try the next decoder.
-    }
-  }
-
-  return "[无法直接解码为文本]";
-}
-
-function parseRecord(record) {
-  const base = {
-    recordType: record.recordType,
-    mediaType: record.mediaType || "",
-    id: record.id || "",
-    byteLength: record.data?.byteLength || 0,
-    rawHex: record.data ? bytesToHex(record.data) : "",
-  };
-
-  if (!record.data) {
-    return base;
-  }
-
-  if (record.recordType === "text") {
-    return {
-      ...base,
-      nfc_id: readDataViewAsText(record.data, record.encoding || "utf-8"),
-      encoding: record.encoding || "",
-      lang: record.lang || "",
-    };
-  }
-
-  if (record.recordType === "url" || record.recordType === "absolute-url") {
-    return {
-      ...base,
-      url: readDataViewAsText(record.data),
-    };
-  }
-
-  if (record.mediaType === "application/json") {
-    const jsonText = readDataViewAsText(record.data);
-
-    try {
-      return {
-        ...base,
-        ...JSON.parse(jsonText),
-      };
-    } catch {
-      return {
-        ...base,
-        rawJson: jsonText,
-      };
-    }
-  }
-
-  if (record.mediaType) {
-    return {
-      ...base,
-      text: readDataViewAsText(record.data),
-    };
-  }
-
-  return {
-    ...base,
-    rawText: readDataViewAsText(record.data),
-  };
-}
-
-function cleanupReader() {
-  if (state.ndef && state.handlers) {
-    state.ndef.removeEventListener("reading", state.handlers.reading);
-    state.ndef.removeEventListener("readingerror", state.handlers.readingerror);
-  }
-
-  state.ndef = null;
-  state.handlers = null;
-  state.controller = null;
-}
-
 function setScanning(active) {
   state.scanning = active;
   scanButton.disabled = active;
@@ -222,31 +82,17 @@ function setScanning(active) {
   scanStateEl.textContent = active ? "扫描中" : "未扫描";
 }
 
-function updateResult(event) {
+function updateResult(reading) {
   state.lastReadAt = new Date();
-  serialNumberEl.textContent = event.serialNumber || "(空字符串)";
-  recordCountEl.textContent = String(event.message.records.length);
+  serialNumberEl.textContent = reading.serialNumber || "(空字符串)";
+  recordCountEl.textContent = String(reading.records.length);
   scanTimeEl.textContent = formatNow();
-
-  const parsedRecords = event.message.records.map(parseRecord);
-  recordsEl.textContent = JSON.stringify(parsedRecords, null, 2);
+  recordsEl.textContent = JSON.stringify(reading.records, null, 2);
 }
 
 async function collectDiagnostics() {
-  const browser = detectBrowser();
-  const permission = await getNfcPermissionState();
-  const diagnostics = {
+  const diagnostics = await collectNfcDiagnostics({
     version: APP_VERSION,
-    browser: browser.label,
-    recommendedBrowser: browser.isRecommended,
-    userAgent: browser.userAgent,
-    nfcApiSupported: "NDEFReader" in window,
-    permission,
-    secureContext: window.isSecureContext,
-    topLevel: window.top === window,
-    visibility: document.visibilityState,
-    origin: window.location.origin,
-    href: window.location.href,
     scanning: state.scanning,
     writing: state.writing,
     lastError: state.lastError
@@ -255,7 +101,7 @@ async function collectDiagnostics() {
           message: state.lastError.message || String(state.lastError),
         }
       : null,
-  };
+  });
 
   state.diagnostics = diagnostics;
   return diagnostics;
@@ -280,94 +126,9 @@ async function refreshDiagnostics() {
   return diagnostics;
 }
 
-function buildPreflightHints(diagnostics) {
-  const hints = [];
-
-  if (!diagnostics.nfcApiSupported) {
-    hints.push("当前浏览器没有暴露 Web NFC API");
-  }
-
-  if (!diagnostics.recommendedBrowser) {
-    hints.push("当前看起来不是 Android Chrome");
-  }
-
-  if (!diagnostics.secureContext) {
-    hints.push("当前页面不是安全上下文");
-  }
-
-  if (!diagnostics.topLevel) {
-    hints.push("当前页面不是顶层页面");
-  }
-
-  if (diagnostics.visibility !== "visible") {
-    hints.push("当前页面不在前台");
-  }
-
-  if (diagnostics.permission === "denied") {
-    hints.push("站点 NFC 权限当前是已拒绝");
-  }
-
-  return hints;
-}
-
-function explainScanError(error, diagnostics) {
-  const hints = buildPreflightHints(diagnostics);
-
-  if (error?.name === "NotAllowedError") {
-    if (hints.length > 0) {
-      return `浏览器拒绝启动 NFC 扫描：${hints.join("；")}。最常见原因是没有用 Android Chrome，或者这个站点的 NFC 权限之前被拒绝了。`;
-    }
-
-    return "浏览器拒绝启动 NFC 扫描。请确认你是在 Android Chrome 中直接打开页面，站点权限里允许 NFC，且手机系统 NFC 已开启。";
-  }
-
-  if (error?.name === "NotSupportedError") {
-    return "当前设备或浏览器不支持 NFC，或者系统里的 NFC 没有开启。";
-  }
-
-  if (error?.name === "InvalidStateError") {
-    return "已有 NFC 扫描流程正在进行。请先停止扫描，再重新开始。";
-  }
-
-  if (error?.name === "AbortError") {
-    return "扫描已停止。";
-  }
-
-  return `启动扫描失败：${error?.name || "UnknownError"} ${error?.message || ""}`.trim();
-}
-
-function explainWriteError(error, diagnostics) {
-  const hints = buildPreflightHints(diagnostics);
-
-  if (error?.name === "NotAllowedError") {
-    if (hints.length > 0) {
-      return `浏览器拒绝写入 NFC：${hints.join("；")}。请确认使用 Android Chrome，并允许站点 NFC 权限。`;
-    }
-
-    return "浏览器拒绝写入 NFC。请确认站点 NFC 权限已允许，页面保持在前台，且手机系统 NFC 已开启。";
-  }
-
-  if (error?.name === "NotSupportedError") {
-    return "当前设备或浏览器不支持 NFC 写入，或者系统里的 NFC 没有开启。";
-  }
-
-  if (error?.name === "NetworkError") {
-    return "写入失败。请确认卡片是可写的 NDEF 标签，并在提示后贴近手机背面停留 1 到 2 秒。";
-  }
-
-  return `写入失败：${error?.name || "UnknownError"} ${error?.message || ""}`.trim();
-}
-
 async function stopScan({ silent = false, refresh = true } = {}) {
-  if (state.controller) {
-    try {
-      state.controller.abort();
-    } catch {
-      // Ignore abort failures.
-    }
-  }
-
-  cleanupReader();
+  state.scanner?.stop();
+  state.scanner = null;
   setScanning(false);
 
   if (refresh) {
@@ -390,12 +151,12 @@ async function writeNfcText(event) {
     return;
   }
 
-  if (!("NDEFReader" in window)) {
+  if (!isWebNfcSupported()) {
     setStatus("当前浏览器不支持 Web NFC。请改用 Android Chrome 直接打开这个页面。", "error");
     return;
   }
 
-  if (!detectBrowser().isRecommended) {
+  if (!detectNfcBrowser().isRecommended) {
     setStatus("当前看起来不是 Android Chrome。很多系统浏览器、内置浏览器即使能打开页面，也会在写入时直接拒绝。", "error");
     return;
   }
@@ -409,23 +170,12 @@ async function writeNfcText(event) {
   setStatus("准备写入。请把 NFC 卡片贴近手机背面，停留 1 到 2 秒。", "info");
 
   try {
-    const ndef = new NDEFReader();
-
-    await ndef.write({
-      records: [
-        {
-          recordType: "mime",
-          mediaType: "application/json",
-          data: JSON.stringify({ nfc_id: text }),
-        },
-      ],
-    });
-
+    await writeNfcId(text);
     setStatus("写入成功。", "success");
   } catch (error) {
     state.lastError = error;
     const diagnostics = await refreshDiagnostics();
-    setStatus(explainWriteError(error, diagnostics), "error");
+    setStatus(explainNfcWriteError(error, diagnostics), "error");
   } finally {
     state.writing = false;
     writeButton.disabled = false;
@@ -440,7 +190,7 @@ async function startScan() {
     await stopScan({ silent: true });
   }
 
-  if (!("NDEFReader" in window)) {
+  if (!isWebNfcSupported()) {
     setStatus("当前浏览器不支持 Web NFC。请改用 Android Chrome 直接打开这个页面。", "error");
     return;
   }
@@ -453,38 +203,31 @@ async function startScan() {
   setStatus("正在请求 NFC 权限。请保持页面在前台，并在浏览器弹窗中允许。", "info");
 
   try {
-    const ndef = new NDEFReader();
-    const controller = new AbortController();
+    const scanner = createNfcScanner({
+      onReading: (reading) => {
+        updateResult(reading);
+        setStatus("读取成功。你可以继续贴更多 NFC 标签。", "success");
+        refreshDiagnostics();
+      },
+      onReadingError: () => {
+        setStatus("检测到 NFC 标签，但内容无法按 NDEF 方式读取。它可能不是 NDEF 标签。", "error");
+      },
+    });
 
-    const reading = (event) => {
-      updateResult(event);
-      setStatus("读取成功。你可以继续贴更多 NFC 标签。", "success");
-      refreshDiagnostics();
-    };
+    state.scanner = scanner;
 
-    const readingerror = () => {
-      setStatus("检测到 NFC 标签，但内容无法按 NDEF 方式读取。它可能不是 NDEF 标签。", "error");
-    };
-
-    state.ndef = ndef;
-    state.controller = controller;
-    state.handlers = { reading, readingerror };
-
-    ndef.addEventListener("reading", reading);
-    ndef.addEventListener("readingerror", readingerror);
-
-    await ndef.scan({ signal: controller.signal });
+    await scanner.start();
 
     setScanning(true);
     await refreshDiagnostics();
     setStatus("扫描已启动。请把 NFC 卡片贴近手机背面，停留 1 到 2 秒。", "success");
   } catch (error) {
     state.lastError = error;
-    cleanupReader();
+    state.scanner = null;
     setScanning(false);
 
     const diagnostics = await refreshDiagnostics();
-    setStatus(explainScanError(error, diagnostics), "error");
+    setStatus(explainNfcScanError(error, diagnostics), "error");
   }
 }
 
