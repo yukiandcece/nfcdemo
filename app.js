@@ -1,4 +1,4 @@
-const APP_VERSION = "2026.04.27-r2";
+const APP_VERSION = "2026.04.27-r3";
 
 const scanButton = document.getElementById("scanButton");
 const stopButton = document.getElementById("stopButton");
@@ -173,6 +173,22 @@ function parseRecord(record) {
       ...base,
       url: readDataViewAsText(record.data),
     };
+  }
+
+  if (record.mediaType === "application/json") {
+    const jsonText = readDataViewAsText(record.data);
+
+    try {
+      return {
+        ...base,
+        ...JSON.parse(jsonText),
+      };
+    } catch {
+      return {
+        ...base,
+        rawJson: jsonText,
+      };
+    }
   }
 
   if (record.mediaType) {
@@ -398,10 +414,9 @@ async function writeNfcText(event) {
     await ndef.write({
       records: [
         {
-          recordType: "text",
-          data: text,
-          lang: "zh-CN",
-          encoding: "utf-8",
+          recordType: "mime",
+          mediaType: "application/json",
+          data: JSON.stringify({ nfc_id: text }),
         },
       ],
     });
