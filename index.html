@@ -10,7 +10,7 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>NFC UID Demo</title>
-    <link rel="stylesheet" href="./style.css?v=2026.04.23-r3" />
+    <link rel="stylesheet" href="./style.css?v=2026.04.27-r1" />
   </head>
   <body>
     <main class="page">
@@ -42,6 +42,19 @@
             刷新诊断
           </button>
         </div>
+
+        <form id="writeForm" class="write-form">
+          <input
+            id="writeInput"
+            class="nfc-input"
+            type="text"
+            autocomplete="off"
+            placeholder="输入要写入 NFC 卡片的文本"
+          />
+          <button id="writeButton" class="primary-btn" type="submit">
+            写入
+          </button>
+        </form>
 
         <p id="status" class="status" aria-live="polite">
           等待开始。请使用支持 Web NFC 的安卓手机 Chrome 浏览器。
@@ -128,6 +141,6 @@
       </section>
     </main>
 
-    <script type="module" src="./app.js?v=2026.04.23-r3"></script>
+    <script type="module" src="./app.js?v=2026.04.27-r1"></script>
   </body>
 </html>

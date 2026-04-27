@@ -119,6 +119,31 @@ h1 {
   margin-top: 22px;
 }
 
+.write-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.nfc-input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 15px 18px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.84);
+  font: inherit;
+  font-size: 16px;
+  outline: none;
+}
+
+.nfc-input:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px rgba(184, 92, 56, 0.14);
+}
+
 .primary-btn,
 .secondary-btn,
 .ghost-btn {
@@ -283,9 +308,14 @@ button:disabled {
     flex-direction: column;
   }
 
+  .write-form {
+    grid-template-columns: 1fr;
+  }
+
   .primary-btn,
   .secondary-btn,
-  .ghost-btn {
+  .ghost-btn,
+  .write-form .primary-btn {
     width: 100%;
   }
 }

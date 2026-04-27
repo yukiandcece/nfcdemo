@@ -1,8 +1,11 @@
-const APP_VERSION = "2026.04.23-r3";
+const APP_VERSION = "2026.04.27-r1";
 
 const scanButton = document.getElementById("scanButton");
 const stopButton = document.getElementById("stopButton");
 const refreshButton = document.getElementById("refreshButton");
+const writeForm = document.getElementById("writeForm");
+const writeInput = document.getElementById("writeInput");
+const writeButton = document.getElementById("writeButton");
 const statusEl = document.getElementById("status");
 const serialNumberEl = document.getElementById("serialNumber");
 const recordCountEl = document.getElementById("recordCount");
@@ -24,6 +27,7 @@ const state = {
   controller: null,
   ndef: null,
   scanning: false,
+  writing: false,
   lastError: null,
   lastReadAt: null,
   diagnostics: null,
@@ -228,6 +232,7 @@ async function collectDiagnostics() {
     origin: window.location.origin,
     href: window.location.href,
     scanning: state.scanning,
+    writing: state.writing,
     lastError: state.lastError
       ? {
           name: state.lastError.name || "",
@@ -315,7 +320,29 @@ function explainScanError(error, diagnostics) {
   return `启动扫描失败：${error?.name || "UnknownError"} ${error?.message || ""}`.trim();
 }
 
-async function stopScan({ silent = false } = {}) {
+function explainWriteError(error, diagnostics) {
+  const hints = buildPreflightHints(diagnostics);
+
+  if (error?.name === "NotAllowedError") {
+    if (hints.length > 0) {
+      return `浏览器拒绝写入 NFC：${hints.join("；")}。请确认使用 Android Chrome，并允许站点 NFC 权限。`;
+    }
+
+    return "浏览器拒绝写入 NFC。请确认站点 NFC 权限已允许，页面保持在前台，且手机系统 NFC 已开启。";
+  }
+
+  if (error?.name === "NotSupportedError") {
+    return "当前设备或浏览器不支持 NFC 写入，或者系统里的 NFC 没有开启。";
+  }
+
+  if (error?.name === "NetworkError") {
+    return "写入失败。请确认卡片是可写的 NDEF 标签，并在提示后贴近手机背面停留 1 到 2 秒。";
+  }
+
+  return `写入失败：${error?.name || "UnknownError"} ${error?.message || ""}`.trim();
+}
+
+async function stopScan({ silent = false, refresh = true } = {}) {
   if (state.controller) {
     try {
       state.controller.abort();
@@ -326,10 +353,68 @@ async function stopScan({ silent = false } = {}) {
 
   cleanupReader();
   setScanning(false);
-  await refreshDiagnostics();
+
+  if (refresh) {
+    await refreshDiagnostics();
+  }
 
   if (!silent) {
     setStatus("扫描已停止。", "info");
+  }
+}
+
+async function writeNfcText(event) {
+  event.preventDefault();
+
+  const text = writeInput.value.trim();
+
+  if (!text) {
+    setStatus("请输入要写入 NFC 卡片的文本。", "error");
+    writeInput.focus();
+    return;
+  }
+
+  if (!("NDEFReader" in window)) {
+    setStatus("当前浏览器不支持 Web NFC。请改用 Android Chrome 直接打开这个页面。", "error");
+    return;
+  }
+
+  if (!detectBrowser().isRecommended) {
+    setStatus("当前看起来不是 Android Chrome。很多系统浏览器、内置浏览器即使能打开页面，也会在写入时直接拒绝。", "error");
+    return;
+  }
+
+  if (state.scanning) {
+    await stopScan({ silent: true, refresh: false });
+  }
+
+  state.writing = true;
+  writeButton.disabled = true;
+  setStatus("准备写入。请把 NFC 卡片贴近手机背面，停留 1 到 2 秒。", "info");
+
+  try {
+    const ndef = new NDEFReader();
+
+    await ndef.write({
+      records: [
+        {
+          recordType: "text",
+          data: text,
+          lang: "zh-CN",
+          encoding: "utf-8",
+        },
+      ],
+    });
+
+    setStatus("写入成功。", "success");
+  } catch (error) {
+    state.lastError = error;
+    const diagnostics = await refreshDiagnostics();
+    setStatus(explainWriteError(error, diagnostics), "error");
+  } finally {
+    state.writing = false;
+    writeButton.disabled = false;
+    await refreshDiagnostics();
   }
 }
 
@@ -390,6 +475,7 @@ async function startScan() {
 
 scanButton.addEventListener("click", startScan);
 stopButton.addEventListener("click", () => stopScan());
+writeForm.addEventListener("submit", writeNfcText);
 refreshButton.addEventListener("click", async () => {
   await refreshDiagnostics();
   setStatus("环境诊断已刷新。", "info");
